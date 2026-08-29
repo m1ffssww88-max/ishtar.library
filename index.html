@@ -541,6 +541,159 @@
             font-size: 15px;
         }
 
+        /* ===================== REVIEWS (تقييمات المنتج) ===================== */
+        .reviews-summary {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .reviews-stars {
+            color: #f5a623;
+            font-size: 18px;
+            letter-spacing: 2px;
+        }
+
+        .reviews-count {
+            color: var(--text-gray);
+            font-size: 13px;
+        }
+
+        .review-item {
+            border-bottom: 1px solid var(--border-color);
+            padding: 12px 0;
+        }
+
+        .review-item:last-child {
+            border-bottom: none;
+        }
+
+        .review-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .review-name {
+            font-weight: bold;
+            color: var(--text-dark);
+            font-size: 14px;
+        }
+
+        .review-stars {
+            color: #f5a623;
+            font-size: 13px;
+            letter-spacing: 1px;
+        }
+
+        .review-comment {
+            color: var(--text-gray);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .no-reviews {
+            color: var(--text-gray);
+            font-size: 14px;
+            font-style: italic;
+        }
+
+        .review-form {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .star-picker {
+            display: flex;
+            flex-direction: row-reverse;
+            justify-content: flex-end;
+            gap: 4px;
+            font-size: 26px;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+
+        .star-picker i {
+            color: #ddd;
+            transition: color 0.15s;
+        }
+
+        .star-picker i.active {
+            color: #f5a623;
+        }
+
+        .review-form textarea, .review-form input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 14px;
+            margin-bottom: 10px;
+            resize: vertical;
+        }
+
+        .review-submit-btn {
+            background: var(--primary-pink);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .review-submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .admin-review-card {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 12px;
+            background: #fff;
+        }
+
+        .admin-review-card .review-item-header {
+            margin-bottom: 8px;
+        }
+
+        .admin-review-card .review-product {
+            font-size: 12px;
+            color: var(--text-gray);
+            margin-bottom: 6px;
+        }
+
+        .admin-review-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .admin-review-actions button {
+            padding: 6px 14px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .btn-approve {
+            background: #2e7d32;
+            color: #fff;
+        }
+
+        .btn-reject {
+            background: #c62828;
+            color: #fff;
+        }
+
         .order-btn {
             width: 100%;
             padding: 16px;
@@ -1250,6 +1403,7 @@
         let cloudDb = null;
         let cloudMetaRef = null;      // مستند صغير: تصنيفات + إعدادات فقط (بدون صور)
         let cloudProductsRef = null;  // مجموعة: كل منتج له مستنده الخاص (فيه صورته)
+        let cloudReviewsRef = null;   // مجموعة: كل تقييم/تعليق له مستنده الخاص
         let cloudAuth = null;
 
         if (FIREBASE_CONFIGURED) {
@@ -1258,6 +1412,7 @@
                 cloudDb = firebase.firestore();
                 cloudMetaRef = cloudDb.collection('aymen_store').doc('meta');
                 cloudProductsRef = cloudDb.collection('aymen_store_products');
+                cloudReviewsRef = cloudDb.collection('aymen_store_reviews');
                 cloudAuth = firebase.auth();
             } catch (err) {
                 console.error('تعذر تهيئة Firebase:', err);
@@ -1377,6 +1532,44 @@
             }
         }
 
+        // ===================== REVIEWS CLOUD FUNCTIONS =====================
+        // إضافة تقييم جديد (من زبون: status='pending' دائماً، من الأدمن: status='approved')
+        async function addCloudReview(review) {
+            if (!cloudReviewsRef) return { ok: false, reason: 'not-configured' };
+            try {
+                const docRef = cloudReviewsRef.doc();
+                await docRef.set({ ...review, id: docRef.id });
+                return { ok: true, id: docRef.id };
+            } catch (err) {
+                console.error('تعذر إضافة التقييم على Firebase:', err);
+                return { ok: false, reason: 'cloud-error', error: err };
+            }
+        }
+
+        // تحديث حالة تقييم (تستخدم للموافقة عليه من لوحة الإدارة)
+        async function updateCloudReview(id, data) {
+            if (!cloudReviewsRef) return { ok: false, reason: 'not-configured' };
+            try {
+                await cloudReviewsRef.doc(String(id)).update(data);
+                return { ok: true };
+            } catch (err) {
+                console.error('تعذر تحديث التقييم على Firebase:', err);
+                return { ok: false, reason: 'cloud-error', error: err };
+            }
+        }
+
+        // حذف تقييم (رفض تقييم معلّق، أو حذف تقييم معتمد)
+        async function deleteCloudReview(id) {
+            if (!cloudReviewsRef) return { ok: false, reason: 'not-configured' };
+            try {
+                await cloudReviewsRef.doc(String(id)).delete();
+                return { ok: true };
+            } catch (err) {
+                console.error('تعذر حذف التقييم من Firebase:', err);
+                return { ok: false, reason: 'cloud-error', error: err };
+            }
+        }
+
         // حفظ جماعي (يُستخدم فقط لعمليات الجملة: استيراد نسخة احتياطية / إعادة تعيين)
         async function saveCloudStoreDataBulk(data) {
             const metaResult = await saveCloudMeta(data.categories, data.settings);
@@ -1480,6 +1673,28 @@
                     <div class="detail-section" id="colorsSection">
                         <div class="detail-label"><i class="fas fa-palette"></i> الألوان المتوفرة</div>
                         <div class="colors-list" id="modalColors"></div>
+                    </div>
+
+                    <div class="detail-section">
+                        <div class="detail-label"><i class="fas fa-star"></i> التقييمات</div>
+                        <div class="reviews-summary" id="reviewsSummary"></div>
+                        <div id="reviewsList"></div>
+
+                        <div class="review-form">
+                            <div class="detail-label" style="margin-bottom:8px;">أضف تقييمك</div>
+                            <div class="star-picker" id="reviewStarPicker">
+                                <i class="fas fa-star" data-value="5"></i>
+                                <i class="fas fa-star" data-value="4"></i>
+                                <i class="fas fa-star" data-value="3"></i>
+                                <i class="fas fa-star" data-value="2"></i>
+                                <i class="fas fa-star" data-value="1"></i>
+                            </div>
+                            <input type="text" id="reviewName" placeholder="اسمك (اختياري)">
+                            <textarea id="reviewComment" rows="3" placeholder="اكتب رأيك بالمنتج..."></textarea>
+                            <button type="button" class="review-submit-btn" id="reviewSubmitBtn" onclick="submitReview()">
+                                <i class="fas fa-paper-plane"></i> إرسال التقييم
+                            </button>
+                        </div>
                     </div>
 
                     <button class="order-btn" onclick="openOrderModal()">
@@ -1687,6 +1902,7 @@
         // يستخدم المنتجات الافتراضية بالأسفل.
         let categories = defaultCategories;
         let products = defaultProducts;
+        let reviews = []; // كل التقييمات (معلّقة + معتمدة) — تُفلتر عند العرض حسب الحاجة
         let storeSettings = {
             instaUsername: 'ishtar.library',
             storeName: 'مكتبة عشتار',
@@ -1697,6 +1913,7 @@
         // ===================== STATE =====================
         let currentProduct = null;
         let selectedColor = null;
+        let selectedReviewRating = 0;
         let currentCategory = 'all';
         let searchQuery = '';
 
@@ -1754,8 +1971,19 @@
                 cloudProductsRef.onSnapshot((snap) => {
                     products = snap.docs.map(d => d.data());
                     renderProducts();
+                    // لو مودال منتج مفتوح حالياً، نحدّث تقييماته المعروضة أيضاً
+                    if (currentProduct) renderProductReviews(currentProduct.id);
                 }, (err) => {
                     console.error('تعذر الاستماع الحي لتحديثات المنتجات:', err);
+                });
+            }
+
+            if (cloudReviewsRef) {
+                cloudReviewsRef.onSnapshot((snap) => {
+                    reviews = snap.docs.map(d => d.data());
+                    if (currentProduct) renderProductReviews(currentProduct.id);
+                }, (err) => {
+                    console.error('تعذر الاستماع الحي لتحديثات التقييمات:', err);
                 });
             }
         });
@@ -1771,7 +1999,7 @@
             if (subtitleEl && storeSettings.subtitle) {
                 subtitleEl.innerHTML = `<i class="fas fa-heart"></i> ${storeSettings.subtitle}`;
             }
-            document.title = `${name} - فن وألعاب وإبداع`;
+            document.title = `${name} - كتب ومعرفة`;
         }
 
         // ===================== CATEGORIES =====================
@@ -1867,6 +2095,9 @@
 
             document.getElementById('productModal').classList.add('active');
             document.body.style.overflow = 'hidden';
+
+            renderProductReviews(id);
+            resetReviewForm();
         }
 
         function closeProductModal() {
@@ -1895,6 +2126,123 @@
             document.querySelectorAll('.color-btn').forEach(btn => {
                 btn.classList.toggle('selected', btn.textContent === color);
             });
+        }
+
+        // ===================== REVIEWS (STOREFRONT) =====================
+        // يبني نص النجوم (★★★★☆) لعرض تقييم بأي مكان
+        function buildStarsHTML(rating) {
+            const full = Math.round(rating);
+            let html = '';
+            for (let i = 1; i <= 5; i++) {
+                html += i <= full ? '★' : '☆';
+            }
+            return html;
+        }
+
+        // يعرض ملخص التقييمات (المعدل + العدد) وقائمة التعليقات المعتمدة فقط
+        // للمنتج الحالي. التقييمات المعلّقة (لم يوافق عليها الأدمن بعد) لا تظهر هنا.
+        function renderProductReviews(productId) {
+            const approved = reviews.filter(r => r.productId === productId && r.status === 'approved');
+            const summaryEl = document.getElementById('reviewsSummary');
+            const listEl = document.getElementById('reviewsList');
+
+            if (approved.length === 0) {
+                summaryEl.innerHTML = '<span class="no-reviews">لا توجد تقييمات بعد — كن أول من يقيّم</span>';
+                listEl.innerHTML = '';
+                return;
+            }
+
+            const avg = approved.reduce((sum, r) => sum + Number(r.rating), 0) / approved.length;
+            summaryEl.innerHTML = `
+                <span class="reviews-stars">${buildStarsHTML(avg)}</span>
+                <span class="reviews-count">${avg.toFixed(1)} (${approved.length} تقييم)</span>
+            `;
+
+            listEl.innerHTML = approved
+                .slice()
+                .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+                .map(r => `
+                    <div class="review-item">
+                        <div class="review-item-header">
+                            <span class="review-name">${escapeHtml(r.name || 'زائر')}</span>
+                            <span class="review-stars">${buildStarsHTML(r.rating)}</span>
+                        </div>
+                        <div class="review-comment">${escapeHtml(r.comment || '')}</div>
+                    </div>
+                `).join('');
+        }
+
+        // حماية بسيطة من إدخال HTML/سكربتات داخل الاسم أو التعليق
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // يهيّئ اختيار النجوم بالنموذج (يشتغل بالنقر على أي نجمة)
+        function setupStarPicker(containerId, onSelect) {
+            const container = document.getElementById(containerId);
+            if (!container || container.dataset.wired) return;
+            container.dataset.wired = 'true';
+            container.querySelectorAll('i').forEach(star => {
+                star.addEventListener('click', () => {
+                    const value = Number(star.dataset.value);
+                    onSelect(value);
+                    container.querySelectorAll('i').forEach(s => {
+                        s.classList.toggle('active', Number(s.dataset.value) <= value);
+                    });
+                });
+            });
+        }
+
+        function resetReviewForm() {
+            selectedReviewRating = 0;
+            const nameInput = document.getElementById('reviewName');
+            const commentInput = document.getElementById('reviewComment');
+            if (nameInput) nameInput.value = '';
+            if (commentInput) commentInput.value = '';
+            document.querySelectorAll('#reviewStarPicker i').forEach(s => s.classList.remove('active'));
+        }
+
+        setupStarPicker('reviewStarPicker', (value) => { selectedReviewRating = value; });
+
+        // يرسل تقييم الزبون كـ "معلّق" (pending) بانتظار موافقة الأدمن من لوحة الإدارة
+        async function submitReview() {
+            if (!currentProduct) return;
+
+            if (!selectedReviewRating) {
+                showToast('الرجاء اختيار عدد النجوم أولاً');
+                return;
+            }
+            const comment = document.getElementById('reviewComment').value.trim();
+            if (!comment) {
+                showToast('الرجاء كتابة تعليق قبل الإرسال');
+                return;
+            }
+            const name = document.getElementById('reviewName').value.trim();
+
+            const btn = document.getElementById('reviewSubmitBtn');
+            btn.disabled = true;
+
+            const result = await addCloudReview({
+                productId: currentProduct.id,
+                name: name || 'زائر',
+                rating: selectedReviewRating,
+                comment,
+                status: 'pending',
+                createdAt: Date.now()
+            });
+
+            btn.disabled = false;
+
+            if (result.ok) {
+                showToast('شكراً لك! تقييمك قيد المراجعة وسيظهر بعد موافقة الإدارة');
+                resetReviewForm();
+            } else if (result.reason === 'not-configured') {
+                showToast('تنبيه: Firebase غير مُهيّأ، لا يمكن إرسال التقييم حالياً');
+            } else {
+                showToast('حدث خطأ أثناء إرسال التقييم، حاول مرة أخرى');
+            }
         }
 
         // ===================== ORDER =====================
@@ -2117,6 +2465,9 @@
                 <div class="nav-item" onclick="showPage('categories', this)">
                     <i class="fas fa-tags"></i> التصنيفات
                 </div>
+                <div class="nav-item" onclick="showPage('reviews', this)">
+                    <i class="fas fa-star"></i> التقييمات
+                </div>
                 <div class="nav-item" onclick="showPage('settings', this)">
                     <i class="fas fa-cog"></i> الإعدادات
                 </div>
@@ -2215,6 +2566,28 @@
                             </button>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- REVIEWS -->
+            <div id="page-reviews" style="display:none;">
+                <div class="page-header">
+                    <h1 class="page-title">إدارة <span>التقييمات</span></h1>
+                    <button class="btn btn-primary" onclick="openManualReviewModal()">
+                        <i class="fas fa-plus"></i> إضافة تقييم يدوي
+                    </button>
+                </div>
+                <div class="section-card">
+                    <div class="section-header">
+                        <h3 class="section-title"><i class="fas fa-hourglass-half"></i> تقييمات بانتظار الموافقة</h3>
+                    </div>
+                    <div id="pendingReviewsList"></div>
+                </div>
+                <div class="section-card">
+                    <div class="section-header">
+                        <h3 class="section-title"><i class="fas fa-check-circle"></i> تقييمات معتمدة</h3>
+                    </div>
+                    <div id="approvedReviewsList"></div>
                 </div>
             </div>
 
@@ -2495,6 +2868,43 @@
         </div>
     </div>
 
+    <!-- MANUAL REVIEW MODAL (إضافة تقييم يدوي من الأدمن) -->
+    <div class="modal-overlay" id="manualReviewModal">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-star"></i> إضافة تقييم يدوي</h3>
+                <button class="modal-close" onclick="closeManualReviewModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">المنتج</label>
+                    <select class="form-input" id="manualReviewProduct"></select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">عدد النجوم</label>
+                    <div class="star-picker" id="manualReviewStarPicker">
+                        <i class="fas fa-star" data-value="5"></i>
+                        <i class="fas fa-star" data-value="4"></i>
+                        <i class="fas fa-star" data-value="3"></i>
+                        <i class="fas fa-star" data-value="2"></i>
+                        <i class="fas fa-star" data-value="1"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">الاسم (اختياري)</label>
+                    <input type="text" class="form-input" id="manualReviewName" placeholder="مثال: أحمد">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">التعليق</label>
+                    <textarea class="form-input" id="manualReviewComment" rows="3" placeholder="مثال: ممتاز للبناء المالي"></textarea>
+                </div>
+                <button class="btn btn-primary" style="width: 100%;" onclick="saveManualReview()">
+                    <i class="fas fa-save"></i> إضافة التقييم
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- TOAST -->
     <div class="toast" id="admToast">
         <i class="fas fa-check-circle"></i>
@@ -2767,6 +3177,7 @@
             if (page === 'home') updateHomeStats();
             if (page === 'products') renderProductsTable();
             if (page === 'categories') renderCategoriesList();
+            if (page === 'reviews') renderReviewsAdmin();
             if (page === 'preview') refreshPreview();
 
             document.getElementById('sidebar').classList.remove('open');
@@ -3216,6 +3627,119 @@
             renderCategoriesList();
             renderProductsTable();
             showAdminToast('تم حذف التصنيف');
+        }
+
+        // ===================== REVIEWS (ADMIN) =====================
+        // يبني بطاقة تقييم واحدة للعرض في لوحة الإدارة (معلّق أو معتمد)
+        function buildAdminReviewCard(r, actionsHtml) {
+            const product = products.find(p => p.id === r.productId);
+            const productName = product ? product.name : 'منتج محذوف';
+            return `
+                <div class="admin-review-card">
+                    <div class="review-product"><i class="fas fa-box"></i> ${escapeHtml(productName)}</div>
+                    <div class="review-item-header">
+                        <span class="review-name">${escapeHtml(r.name || 'زائر')}</span>
+                        <span class="review-stars">${buildStarsHTML(r.rating)}</span>
+                    </div>
+                    <div class="review-comment">${escapeHtml(r.comment || '')}</div>
+                    <div class="admin-review-actions">${actionsHtml}</div>
+                </div>
+            `;
+        }
+
+        function renderReviewsAdmin() {
+            const pending = reviews.filter(r => r.status === 'pending').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            const approved = reviews.filter(r => r.status === 'approved').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+            const pendingEl = document.getElementById('pendingReviewsList');
+            const approvedEl = document.getElementById('approvedReviewsList');
+
+            pendingEl.innerHTML = pending.length
+                ? pending.map(r => buildAdminReviewCard(r, `
+                    <button class="btn-approve" onclick="approveReview('${r.id}')"><i class="fas fa-check"></i> قبول</button>
+                    <button class="btn-reject" onclick="rejectReview('${r.id}')"><i class="fas fa-times"></i> رفض</button>
+                `)).join('')
+                : '<p class="no-reviews">لا توجد تقييمات بانتظار الموافقة</p>';
+
+            approvedEl.innerHTML = approved.length
+                ? approved.map(r => buildAdminReviewCard(r, `
+                    <button class="btn-reject" onclick="rejectReview('${r.id}')"><i class="fas fa-trash"></i> حذف</button>
+                `)).join('')
+                : '<p class="no-reviews">لا توجد تقييمات معتمدة بعد</p>';
+        }
+
+        async function approveReview(id) {
+            const result = await updateCloudReview(id, { status: 'approved' });
+            reportSaveResult(result);
+            const r = reviews.find(x => x.id === id);
+            if (r) r.status = 'approved';
+            renderReviewsAdmin();
+            showAdminToast('تم قبول التقييم');
+        }
+
+        async function rejectReview(id) {
+            if (!confirm('هل أنت متأكد من حذف هذا التقييم؟')) return;
+            const result = await deleteCloudReview(id);
+            reportSaveResult(result);
+            reviews = reviews.filter(x => x.id !== id);
+            renderReviewsAdmin();
+            showAdminToast('تم حذف التقييم');
+        }
+
+        let manualReviewRating = 0;
+
+        function openManualReviewModal() {
+            const select = document.getElementById('manualReviewProduct');
+            select.innerHTML = products.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+
+            manualReviewRating = 0;
+            document.getElementById('manualReviewName').value = '';
+            document.getElementById('manualReviewComment').value = '';
+            document.querySelectorAll('#manualReviewStarPicker i').forEach(s => s.classList.remove('active'));
+
+            document.getElementById('manualReviewModal').classList.add('active');
+        }
+
+        function closeManualReviewModal() {
+            document.getElementById('manualReviewModal').classList.remove('active');
+        }
+
+        setupStarPicker('manualReviewStarPicker', (value) => { manualReviewRating = value; });
+
+        async function saveManualReview() {
+            const productId = Number(document.getElementById('manualReviewProduct').value);
+            const name = document.getElementById('manualReviewName').value.trim();
+            const comment = document.getElementById('manualReviewComment').value.trim();
+
+            if (!manualReviewRating) {
+                showAdminToast('الرجاء اختيار عدد النجوم');
+                return;
+            }
+            if (!comment) {
+                showAdminToast('الرجاء كتابة تعليق');
+                return;
+            }
+
+            const result = await addCloudReview({
+                productId,
+                name: name || 'زائر',
+                rating: manualReviewRating,
+                comment,
+                status: 'approved',
+                createdAt: Date.now()
+            });
+
+            if (result.ok) {
+                reviews.push({
+                    id: result.id, productId, name: name || 'زائر',
+                    rating: manualReviewRating, comment, status: 'approved', createdAt: Date.now()
+                });
+                closeManualReviewModal();
+                renderReviewsAdmin();
+                showAdminToast('تم إضافة التقييم بنجاح');
+            } else {
+                reportSaveResult(result);
+            }
         }
 
         // ===================== SETTINGS =====================
