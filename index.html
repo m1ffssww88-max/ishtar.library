@@ -3633,16 +3633,30 @@
         }
 
         // ===================== CATEGORIES =====================
+        // معرّف/اسم تصنيف "غير مصنف" — يُنشأ تلقائياً أول مرة يُحذف فيها تصنيف
+        // فيه منتجات، وتُنقل له المنتجات اليتيمة بدل حذفها أو ضياع تصنيفها
+        const UNCATEGORIZED_ID = 'uncategorized';
+        const UNCATEGORIZED_NAME = 'غير مصنف';
+
+        function ensureUncategorizedCategory() {
+            if (!categories.find(c => c.id === UNCATEGORIZED_ID)) {
+                categories.push({ id: UNCATEGORIZED_ID, name: UNCATEGORIZED_NAME });
+            }
+        }
+
         function renderCategoriesList() {
             const list = document.getElementById('categoriesList');
-            list.innerHTML = categories.filter(c => c.id !== 'all').map(c => 
-                `<div class="cat-tag">
+            list.innerHTML = categories.filter(c => c.id !== 'all').map(c => {
+                const isUncategorized = c.id === UNCATEGORIZED_ID;
+                return `<div class="cat-tag">
                     <i class="fas fa-tag" style="color: var(--primary-pink);"></i>
                     ${c.name}
                     <span style="color: #555; font-size: 12px;">(${c.id})</span>
-                    <button onclick="deleteCategory('${c.id}')" title="حذف"><i class="fas fa-times"></i></button>
-                </div>`
-            ).join('');
+                    ${isUncategorized
+                        ? `<span style="color: #999; font-size: 11px;" title="تصنيف تلقائي، لا يمكن حذفه"><i class="fas fa-lock"></i></span>`
+                        : `<button onclick="deleteCategory('${c.id}')" title="حذف"><i class="fas fa-times"></i></button>`}
+                </div>`;
+            }).join('');
         }
 
         function addCategory() {
@@ -3651,6 +3665,11 @@
 
             if (!id || !name) {
                 showAdminToast('الرجاء ملء جميع الحقول');
+                return;
+            }
+
+            if (id === UNCATEGORIZED_ID) {
+                showAdminToast('هذا المعرف محجوز لتصنيف "غير مصنف" التلقائي');
                 return;
             }
 
@@ -3667,15 +3686,27 @@
             showAdminToast('تم إضافة التصنيف بنجاح');
         }
 
+        // حذف تصنيف بدون حذف منتجاته: تُنقل كل المنتجات المصنّفة فيه إلى
+        // تصنيف "غير مصنف" (يُنشأ تلقائياً عند الحاجة) بدل حذفها أو نقلها
+        // بشكل عشوائي لأول تصنيف آخر.
         function deleteCategory(id) {
-            if (!confirm('هل أنت متأكد؟ سيتم إلغاء تصنيف المنتجات المرتبطة به!')) return;
+            if (id === UNCATEGORIZED_ID) {
+                showAdminToast('لا يمكن حذف تصنيف "غير مصنف"');
+                return;
+            }
+            const affectedCount = products.filter(p => p.category === id).length;
+            const warning = affectedCount > 0
+                ? `هل أنت متأكد؟ سيتم نقل ${affectedCount} منتج من هذا التصنيف إلى "غير مصنف" (بدون حذف المنتجات).`
+                : 'هل أنت متأكد من حذف هذا التصنيف؟';
+            if (!confirm(warning)) return;
+
+            if (affectedCount > 0) ensureUncategorizedCategory();
             categories = categories.filter(c => c.id !== id);
-            const firstCat = categories.find(c => c.id !== 'all');
-            products.forEach(p => { if (p.category === id) p.category = firstCat ? firstCat.id : 'all'; });
+            products.forEach(p => { if (p.category === id) p.category = UNCATEGORIZED_ID; });
             saveAllData();
             renderCategoriesList();
             renderProductsTable();
-            showAdminToast('تم حذف التصنيف');
+            showAdminToast('تم حذف التصنيف، ونُقلت منتجاته إلى "غير مصنف"');
         }
 
         // ===================== REVIEWS (ADMIN) =====================
@@ -4028,6 +4059,11 @@ body{background:#f8f4e8;color:#1a1a1a;}
     window.importData = importData;
     window.openAdminAccess = openAdminAccess;
     window.closeAdminOverlay = closeAdminOverlay;
+    window.approveReview = approveReview;
+    window.rejectReview = rejectReview;
+    window.openManualReviewModal = openManualReviewModal;
+    window.closeManualReviewModal = closeManualReviewModal;
+    window.saveManualReview = saveManualReview;
 })();
 
     </script>
